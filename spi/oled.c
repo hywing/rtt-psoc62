@@ -3,8 +3,8 @@
 #include "drv_gpio.h"
 #include "stdlib.h"
 #include "oledfont.h"
-#include "bmp.h"
 
+// 绑定PSoc62板子的GPIO
 #define CS_PIN      GET_PIN(10, 0)
 #define DC_PIN      GET_PIN(10, 1)
 #define RES_PIN     GET_PIN(10, 2)
@@ -24,35 +24,32 @@
 #define X_WIDTH     128
 #define Y_WIDTH     64
 
-//-----------------OLED端口定义----------------
-#define OLED_CS_Clr()  rt_pin_write(CS_PIN, PIN_LOW)
-#define OLED_CS_Set()  rt_pin_write(CS_PIN, PIN_HIGH)
-#define OLED_RST_Clr() rt_pin_write(RES_PIN, PIN_LOW)
-#define OLED_RST_Set() rt_pin_write(RES_PIN, PIN_HIGH)
-#define OLED_DC_Clr() rt_pin_write(DC_PIN, PIN_LOW)
-#define OLED_DC_Set() rt_pin_write(DC_PIN, PIN_HIGH)
+// OLED端口定义
+#define OLED_CS_Clr()   rt_pin_write(CS_PIN, PIN_LOW)
+#define OLED_CS_Set()   rt_pin_write(CS_PIN, PIN_HIGH)
+#define OLED_RST_Clr()  rt_pin_write(RES_PIN, PIN_LOW)
+#define OLED_RST_Set()  rt_pin_write(RES_PIN, PIN_HIGH)
+#define OLED_DC_Clr()   rt_pin_write(DC_PIN, PIN_LOW)
+#define OLED_DC_Set()   rt_pin_write(DC_PIN, PIN_HIGH)
 #define OLED_SDIN_Clr() rt_pin_write(SDA_PIN, PIN_LOW)
 #define OLED_SDIN_Set() rt_pin_write(SDA_PIN, PIN_HIGH)
 #define OLED_SCLK_Clr() rt_pin_write(SCL_PIN, PIN_LOW)
 #define OLED_SCLK_Set() rt_pin_write(SCL_PIN, PIN_HIGH)
-#define OLED_WR_Clr() rt_pin_write(WR_PIN, PIN_LOW)
-#define OLED_WR_Set() rt_pin_write(WR_PIN, PIN_HIGH)
-#define OLED_RD_Clr() rt_pin_write(RD_PIN, PIN_LOW)
-#define OLED_RD_Set() rt_pin_write(RD_PIN, PIN_HIGH)
+#define OLED_WR_Clr()   rt_pin_write(WR_PIN, PIN_LOW)
+#define OLED_WR_Set()   rt_pin_write(WR_PIN, PIN_HIGH)
+#define OLED_RD_Clr()   rt_pin_write(RD_PIN, PIN_LOW)
+#define OLED_RD_Set()   rt_pin_write(RD_PIN, PIN_HIGH)
 
-//PC0~7,作为数据线
-#define DATAOUT(x) rt_pin_write(x, PIN_LOW)
-
-#define OLED_CMD  0 //写命令
-#define OLED_DATA 1 //写数据
+#define OLED_CMD  0 // 写命令
+#define OLED_DATA 1 // 写数据
 
 #define u8 unsigned char
 #define u32 unsigned int
 
-//向SSD1106写入一个字节。
-//dat:要写入的数据/命令
-//cmd:数据/命令标志 0,表示命令;1,表示数据;
-void OLED_WR_Byte(u8 dat,u8 cmd)
+static u8 buff[20];
+
+// 向SSD1309写入一个字节数据：dat -> 要写入的数据 or命令，cmd -> 数据or命令
+void OLED_WR_Byte(u8 dat, u8 cmd)
 {
     u8 i;
     if(cmd)
@@ -60,54 +57,59 @@ void OLED_WR_Byte(u8 dat,u8 cmd)
     else
         OLED_DC_Clr();
     OLED_CS_Clr();
-    for(i=0;i<8;i++)
+    for(i=0; i < 8; i++)
     {
         OLED_SCLK_Clr();
-        if(dat&0x80)
+        if(dat & 0x80)
             OLED_SDIN_Set();
         else
             OLED_SDIN_Clr();
         OLED_SCLK_Set();
-        dat<<=1;
+        dat <<= 1;
     }
     OLED_CS_Set();
     OLED_DC_Set();
 }
 
+// 设置绘制的坐标
 void OLED_Set_Pos(unsigned char x, unsigned char y)
 {
-    OLED_WR_Byte(0xb0+y,OLED_CMD);
-    OLED_WR_Byte(((x&0xf0)>>4)|0x10,OLED_CMD);
-    OLED_WR_Byte((x&0x0f)|0x01,OLED_CMD);
+    OLED_WR_Byte(0xb0 + y, OLED_CMD);
+    OLED_WR_Byte(((x & 0xf0) >> 4) | 0x10, OLED_CMD);
+    OLED_WR_Byte((x & 0x0f) | 0x01, OLED_CMD);
 }
-//开启OLED显示
+
+// 开启OLED显示
 void OLED_Display_On(void)
 {
-    OLED_WR_Byte(0X8D,OLED_CMD);  //SET DCDC命令
-    OLED_WR_Byte(0X14,OLED_CMD);  //DCDC ON
-    OLED_WR_Byte(0XAF,OLED_CMD);  //DISPLAY ON
+    OLED_WR_Byte(0X8D, OLED_CMD);
+    OLED_WR_Byte(0X14, OLED_CMD);
+    OLED_WR_Byte(0XAF, OLED_CMD);
 }
-//关闭OLED显示
+
+// 关闭OLED显示
 void OLED_Display_Off(void)
 {
-    OLED_WR_Byte(0X8D,OLED_CMD);  //SET DCDC命令
-    OLED_WR_Byte(0X10,OLED_CMD);  //DCDC OFF
-    OLED_WR_Byte(0XAE,OLED_CMD);  //DISPLAY OFF
+    OLED_WR_Byte(0X8D, OLED_CMD);
+    OLED_WR_Byte(0X10, OLED_CMD);
+    OLED_WR_Byte(0XAE, OLED_CMD);
 }
-//清屏函数,清完屏,整个屏幕是黑色的!和没点亮一样!!!
+
+// 清屏函数，屏幕会置为黑色
 void OLED_Clear(void)
 {
     u8 i,n;
     for(i=0;i<8;i++)
     {
-        OLED_WR_Byte (0xb0+i,OLED_CMD);    //设置页地址（0~7）
-        OLED_WR_Byte (0x00,OLED_CMD);      //设置显示位置—列低地址
-        OLED_WR_Byte (0x10,OLED_CMD);      //设置显示位置—列高地址
-        for(n=0;n<128;n++)
-            OLED_WR_Byte(0,OLED_DATA);
+        OLED_WR_Byte (0xb0 + i, OLED_CMD);      // 设置页地址（0~7）
+        OLED_WR_Byte (0x00, OLED_CMD);          // 设置显示位置—列低地址
+        OLED_WR_Byte (0x10, OLED_CMD);          // 设置显示位置—列高地址
+        for(n = 0; n < 128; n++)
+            OLED_WR_Byte(0, OLED_DATA);
     }
 }
 
+// 绘制字符
 void OLED_ShowChar(u8 x,u8 y,u8 chr)
 {
     unsigned char c=0,i=0;
@@ -133,39 +135,8 @@ void OLED_ShowChar(u8 x,u8 y,u8 chr)
 
     }
 }
-//m^n函数
-u32 oled_pow(u8 m,u8 n)
-{
-    u32 result=1;
-    while(n--)result*=m;
-    return result;
-}
-//显示2个数字
-//x,y :起点坐标
-//len :数字的位数
-//size:字体大小
-//mode:模式   0,填充模式;1,叠加模式
-//num:数值(0~4294967295);
-void OLED_ShowNum(u8 x,u8 y,u32 num,u8 len,u8 size)
-{
-    u8 t,temp;
-    u8 enshow=0;
-    for(t=0;t<len;t++)
-    {
-        temp=(num/oled_pow(10,len-t-1))%10;
-        if(enshow==0&&t<(len-1))
-        {
-            if(temp==0)
-            {
-                OLED_ShowChar(x+(size/2)*t,y,' ');
-                continue;
-            }else enshow=1;
 
-        }
-        OLED_ShowChar(x+(size/2)*t,y,temp+'0');
-    }
-}
-//显示一个字符号串
+// 显示一个字符号串
 void OLED_ShowString(u8 x,u8 y,u8 *chr)
 {
     unsigned char j=0;
@@ -180,40 +151,30 @@ void OLED_ShowString(u8 x,u8 y,u8 *chr)
         j++;
     }
 }
-//显示汉字
+
+// 显示数字
+void OLED_ShowNum(u8 x,u8 y,u32 num)
+{
+    rt_memset(buff, 20, 0);
+    rt_sprintf(buff, "%d", num);
+    OLED_ShowString(x, y, buff);
+}
+
+// 显示汉字
 void OLED_ShowCHinese(u8 x,u8 y,u8 no)
 {
     u8 t,adder=0;
     OLED_Set_Pos(x,y);
     for(t=0;t<16;t++)
     {
-        OLED_WR_Byte(Hzk[2*no][t],OLED_DATA);
+        OLED_WR_Byte(Array[2*no][t],OLED_DATA);
         adder+=1;
     }
     OLED_Set_Pos(x,y+1);
     for(t=0;t<16;t++)
     {
-        OLED_WR_Byte(Hzk[2*no+1][t],OLED_DATA);
+        OLED_WR_Byte(Array[2*no+1][t],OLED_DATA);
         adder+=1;
-    }
-}
-/***********功能描述：显示显示BMP图片128×64起始点坐标(x,y),x的范围0～127，y为页的范围0～7*****************/
-void OLED_DrawBMP(unsigned char x0, unsigned char y0,unsigned char x1, unsigned char y1,unsigned char BMP[])
-{
-    unsigned int j=0;
-    unsigned char x,y;
-
-    if(y1%8 == 0)
-        y = y1 / 8;
-    else
-        y = y1 / 8 + 1;
-    for(y=y0;y<y1;y++)
-    {
-        OLED_Set_Pos(x0,y);
-        for(x=x0;x<x1;x++)
-        {
-            OLED_WR_Byte(BMP[j++],OLED_DATA);
-        }
     }
 }
 
@@ -270,36 +231,38 @@ void OLED_Init(void)
 
 int main(void)
 {
-    u8 t;
-    OLED_Init();            //初始化OLED
-    OLED_Clear()    ;
-
-    t=' ';
+    OLED_Init();
+    OLED_Clear();
 
     for (;;)
     {
-//        OLED_Clear();
+        OLED_Clear();
 
-        OLED_ShowCHinese(10,0,0);
-        OLED_ShowCHinese(28,0,1);
-        OLED_ShowCHinese(46,0,2);
-        OLED_ShowCHinese(64,0,3);
-        OLED_ShowCHinese(82,0,4);
+        OLED_ShowCHinese(10,2,0);   // 迟
+        OLED_ShowCHinese(28,2,1);   // 日
+        OLED_ShowCHinese(46,2,2);   // 江
+        OLED_ShowCHinese(64,2,3);   // 山
+        OLED_ShowCHinese(82,2,4);   // 丽
 
-        OLED_ShowCHinese(10,3,5);
-        OLED_ShowCHinese(28,3,6);
-        OLED_ShowCHinese(46,3,7);
-        OLED_ShowCHinese(64,3,8);
-        OLED_ShowCHinese(82,3,9);
+        OLED_ShowCHinese(10,6,5);   // 春
+        OLED_ShowCHinese(28,6,6);   // 风
+        OLED_ShowCHinese(46,6,7);   // 花
+        OLED_ShowCHinese(64,6,8);   // 草
+        OLED_ShowCHinese(82,6,9);   // 香
 
+        rt_thread_mdelay(2000);
 
+        OLED_Clear();
 
-        rt_thread_mdelay(500);
-//        OLED_Clear();
-//        rt_thread_mdelay(8000);
-//        OLED_DrawBMP(0,0,128,8,BMP1);  
-//        rt_thread_mdelay(8000);
-//        OLED_DrawBMP(0,0,128,8,BMP2);
-//        rt_thread_mdelay(8000);
+        OLED_ShowString(10, 3, "This is hywing");
+
+        rt_thread_mdelay(2000);
+
+        OLED_Clear();
+
+        OLED_ShowNum(5, 3, 1234567890);
+
+        rt_thread_mdelay(2000);
+
     }
 }
