@@ -10,6 +10,7 @@ RT-Thread peripheral demos for Infineon PSoc™62 Board
 - spi
 - uart
 - wdt
+- one-wire
 
 
 
